@@ -1,5 +1,7 @@
 package com.sample.api.model;
 
+import com.sample.api.payload.FaceAnnotation;
+
 public class YelpReviews {
 
 	private String id;

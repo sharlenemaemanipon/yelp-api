@@ -1,5 +1,6 @@
 package com.sample.api.service;
 
+import java.util.Arrays;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import com.sample.api.model.YelpReviews;
+import com.sample.api.payload.AnnotateImageRequest;
+import com.sample.api.payload.FaceAnnotation;
+import com.sample.api.payload.Feature;
+import com.sample.api.payload.GoogleVisionApiRequest;
+import com.sample.api.payload.GoogleVisionApiResponse;
+import com.sample.api.payload.Image;
+import com.sample.api.payload.ImageSource;
 import com.sample.api.payload.YelpReviewsResponse;
 
 /**
@@ -35,6 +43,12 @@ public class YelpService {
 	@Value("${yelp-business-reviews-url}")
 	private String yelpBusinessReviewsUrl;
 
+	@Value("${google-vision-api-key}")
+	private String googleVisionApiKey;
+
+	@Value("${google-vision-image-annotate-url}")
+	private String googleVisionImageAnnotateUrl;
+
 	public YelpService() {
 		super();
 	}
@@ -49,14 +63,34 @@ public class YelpService {
 		HttpHeaders headers = new HttpHeaders();
 		headers.add("Authorization", "Bearer " + yelpApiKey);
 
+		// get request to yelp api
 		ResponseEntity<YelpReviewsResponse> result = restTemplate.exchange(
 				String.format(yelpBusinessReviewsUrl, businessId), HttpMethod.GET, new HttpEntity(headers),
 				YelpReviewsResponse.class);
-
 		if (!result.getStatusCode().equals(HttpStatus.OK)) {
 			return null;
 		}
-		return result.getBody().getReviews();
+
+		List<YelpReviews> reviews = result.getBody().getReviews();
+		for (YelpReviews review : reviews) {
+			GoogleVisionApiRequest googleVisionApiRequest = new GoogleVisionApiRequest(
+					Arrays.asList(new AnnotateImageRequest(new Image(new ImageSource(review.getUser().getImage_url())),
+							Arrays.asList(new Feature("FACE_DETECTION", 50)))));
+			// post request to google vision api
+			ResponseEntity<GoogleVisionApiResponse> googleResult = restTemplate.exchange(String.format(googleVisionImageAnnotateUrl, googleVisionApiKey), HttpMethod.POST,
+					new HttpEntity<>(googleVisionApiRequest), GoogleVisionApiResponse.class);
+			FaceAnnotation image_emotion = null;
+			if (googleResult.getStatusCode().equals(HttpStatus.OK)) {
+				int index = 0;
+				try {
+					image_emotion = googleResult.getBody().getResponses().get(index).getFaceAnnotations().get(index);
+				} catch (Exception e) {
+					image_emotion = null;
+				}
+			}
+			review.getUser().setImage_emotion(image_emotion);
+		}
+		return reviews;
 	}
 
 }
